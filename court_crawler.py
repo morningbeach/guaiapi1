@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, asdict
 import requests
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 from config import Config
 
@@ -89,72 +90,54 @@ class CourtCrawler:
         return cases
 
     def _search_fjud(self, name: str, case_type: str) -> list[CourtCase]:
-        """透過 FJUD 網頁搜尋"""
+        """透過 FJUD 網頁使用 Playwright 搜尋"""
         cases = []
+        logger.info(f"正在使用 Playwright 搜尋 FJUD：{name} (類型: {case_type})")
 
         try:
-            # Step 1: 取得搜尋頁面和表單 token
-            logger.info(f"正在搜尋 FJUD：{name}")
-            resp = self.session.get(Config.COURT_SEARCH_URL, timeout=15)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "lxml")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={'width': 1280, 'height': 800}
+                )
+                page = context.new_page()
 
-            # 提取 ASP.NET 表單欄位
-            viewstate = self._extract_field(soup, "__VIEWSTATE")
-            viewstate_gen = self._extract_field(soup, "__VIEWSTATEGENERATOR")
-            event_validation = self._extract_field(soup, "__EVENTVALIDATION")
+                # Step 1: 進入搜尋頁面
+                page.goto(Config.COURT_SEARCH_URL, wait_until="domcontentloaded", timeout=20000)
 
-            self._sleep()
+                # Step 2: 填寫表單
+                page.wait_for_selector("#txtKW", timeout=10000)
+                page.fill("#txtKW", name)
 
-            # Step 2: 建構搜尋表單資料
-            # 案件類型對應的 radio button 值
-            type_map = {
-                "all": "",
-                "criminal": "3",    # 刑事
-                "civil": "1",       # 民事
-                "administrative": "4",  # 行政
-            }
+                if case_type == "criminal":
+                    page.locator('input[name="judtype"][value="3"]').check()
+                elif case_type == "civil":
+                    page.locator('input[name="judtype"][value="1"]').check()
+                elif case_type == "administrative":
+                    page.locator('input[name="judtype"][value="4"]').check()
 
-            form_data = {
-                "__VIEWSTATE": viewstate,
-                "__VIEWSTATEGENERATOR": viewstate_gen,
-                "__EVENTVALIDATION": event_validation,
-                "txtKW": name,
-                "judtype": type_map.get(case_type, ""),
-                "whosearch": "0",
-                "ctl00$cp_content$btnSimpleQry": "送出查詢",
-            }
+                # Step 3: 送出搜尋並等待結果 iframe
+                with page.expect_navigation(wait_until="domcontentloaded", timeout=20000):
+                    page.click("#btnSimpleQry")
 
-            # Step 3: 送出搜尋
-            resp = self.session.post(
-                Config.COURT_SEARCH_URL,
-                data=form_data,
-                timeout=30,
-                allow_redirects=True,
-            )
-            resp.raise_for_status()
+                # Step 4: 等待 iframe 載入並解析
+                iframe_locator = page.frame_locator("#iframe-data")
+                try:
+                    iframe_locator.locator("table#jud").wait_for(timeout=15000)
+                except PlaywrightTimeoutError:
+                    logger.warning(f"FJUD 搜尋 {name} 查無結果或 iframe 載入逾時")
+                    browser.close()
+                    return cases
 
-            # Step 3.5: 處理 iframe 結果頁面
-            soup = BeautifulSoup(resp.text, "lxml")
-            iframe = soup.find("iframe", {"id": "iframe-data"})
-            if iframe and iframe.get("src"):
-                import urllib.parse
-                iframe_src = iframe.get("src")
-                iframe_url = urllib.parse.urljoin(resp.url, iframe_src)
-                
-                # Fetch iframe
-                resp = self.session.get(iframe_url, timeout=30)
-                resp.raise_for_status()
+                # 解析 iframe 內的 HTML
+                html = iframe_locator.locator("body").inner_html()
+                cases = self._parse_search_results(html, page.url)
 
-            # Step 4: 解析搜尋結果
-            cases = self._parse_search_results(resp.text, resp.url)
+                browser.close()
 
-        except requests.exceptions.Timeout:
-            logger.warning("FJUD 連線逾時")
-        except requests.exceptions.ConnectionError:
-            logger.warning("FJUD 連線失敗")
         except Exception as e:
-            logger.error(f"FJUD 搜尋發生錯誤: {e}")
+            logger.error(f"FJUD Playwright 搜尋發生錯誤: {e}")
 
         return cases
 
@@ -333,43 +316,71 @@ class CourtCrawler:
         return cases
 
     def get_case_detail(self, url: str) -> Optional[CourtCase]:
-        """取得個別裁判書詳情"""
+        """取得個別裁判書詳情（使用 Playwright）"""
         if not url:
             return None
 
         try:
-            self._sleep()
-            resp = self.session.get(url, timeout=15)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "lxml")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+                page = context.new_page()
 
-            # 提取裁判書全文
-            content_div = soup.select_one("#jud_content") or \
-                          soup.select_one(".judgement-content") or \
-                          soup.select_one("#divJudContent") or \
-                          soup.select_one("pre")
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
 
-            if not content_div:
-                return None
+                # 等待內容載入
+                try:
+                    page.wait_for_selector("#jud_content, .judgement-content, #divJudContent", timeout=10000)
+                except PlaywrightTimeoutError:
+                    # 也許是在 iframe 裡面
+                    iframe = page.frame_locator("iframe").first
+                    if iframe:
+                        try:
+                            iframe.locator("#jud_content, .judgement-content").wait_for(timeout=10000)
+                        except PlaywrightTimeoutError:
+                            pass
 
-            full_text = content_div.get_text(strip=True)
+                # 提取裁判書全文
+                html = page.content()
+                soup = BeautifulSoup(html, "lxml")
 
-            case = CourtCase(
-                full_text=full_text[:5000],
-                url=url,
-                verdict=self._extract_verdict(full_text),
-                case_type=self._classify_case_type(full_text),
-            )
+                content_div = soup.select_one("#jud_content") or \
+                              soup.select_one(".judgement-content") or \
+                              soup.select_one("#divJudContent") or \
+                              soup.select_one("pre")
 
-            # 嘗試提取案號
-            title_elem = soup.select_one("title") or soup.select_one("h1")
-            if title_elem:
-                case.case_number = title_elem.get_text(strip=True)
+                if not content_div:
+                    # Try probing iframe
+                    iframe_elem = soup.find("iframe")
+                    if iframe_elem and iframe_elem.get("src"):
+                        # this is too complex if nested, return fallback
+                        pass
 
-            return case
+                if not content_div:
+                    browser.close()
+                    return None
+
+                full_text = content_div.get_text(strip=True)
+
+                case = CourtCase(
+                    full_text=full_text[:5000],
+                    url=url,
+                    verdict=self._extract_verdict(full_text),
+                    case_type=self._classify_case_type(full_text),
+                )
+
+                # 嘗試提取案號
+                title_elem = soup.select_one("title") or soup.select_one("h1")
+                if title_elem:
+                    case.case_number = title_elem.get_text(strip=True)
+
+                browser.close()
+                return case
 
         except Exception as e:
-            logger.error(f"取得裁判書詳情失敗: {e}")
+            logger.error(f"取得裁判書詳情 (Playwright) 失敗: {e}")
             return None
 
     # ─────────────────────────────────────────
