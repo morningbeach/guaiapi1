@@ -92,6 +92,16 @@ def search():
         court_cases_obj = court_crawler.search_by_name(name, case_type)
         court_cases = [c.to_dict() for c in court_cases_obj]
 
+        # 過濾掉錯誤的 FJUD 最新裁判（姓名未出現在案由、裁判字號或摘要中）
+        filtered_cases = []
+        for case in court_cases:
+            combined = str(case.get("title", "")) + str(case.get("case_number", "")) + str(case.get("summary", ""))
+            if name in combined or "法學資料檢索系統" in str(case.get("case_number", "")):
+                # 如果是法學資料檢索系統這類系統本身的條目，我們也保留讓 AI 判斷（或拋棄）
+                if "法學資料檢索系統" not in str(case.get("case_number", "")):
+                    filtered_cases.append(case)
+        court_cases = filtered_cases
+
         # 深度爬取本人判決書全文（前3筆）
         for case in court_cases[:3]:
             if case.get('url'):
@@ -112,8 +122,14 @@ def search():
                 rel_cases = court_crawler.search_by_name(rel_name, case_type)
                 
                 # 深度爬取近親判決書全文（每個近親前2筆）
-                for i, case_obj in enumerate(rel_cases):
-                    case_dict = case_obj.to_dict()
+                filtered_rel_cases = []
+                for case_obj in rel_cases:
+                    cd = case_obj.to_dict()
+                    combined = str(cd.get("title", "")) + str(cd.get("case_number", "")) + str(cd.get("summary", ""))
+                    if rel_name in combined and "法學資料檢索系統" not in str(cd.get("case_number", "")):
+                        filtered_rel_cases.append(cd)
+
+                for i, case_dict in enumerate(filtered_rel_cases):
                     if i < 2 and case_dict.get('url'):
                         logger.info(f"正在深度爬取近親判決書全文: {case_dict.get('case_number')}")
                         detail = court_crawler.get_case_detail(case_dict['url'])

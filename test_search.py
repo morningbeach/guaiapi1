@@ -36,4 +36,4 @@ def test_search(name):
             print("Text:", resp.text)
 
 if __name__ == "__main__":
-    test_search("李四川")
+    test_search("邱于軒")

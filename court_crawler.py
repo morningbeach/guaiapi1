@@ -134,6 +134,18 @@ class CourtCrawler:
             )
             resp.raise_for_status()
 
+            # Step 3.5: 處理 iframe 結果頁面
+            soup = BeautifulSoup(resp.text, "lxml")
+            iframe = soup.find("iframe", {"id": "iframe-data"})
+            if iframe and iframe.get("src"):
+                import urllib.parse
+                iframe_src = iframe.get("src")
+                iframe_url = urllib.parse.urljoin(resp.url, iframe_src)
+                
+                # Fetch iframe
+                resp = self.session.get(iframe_url, timeout=30)
+                resp.raise_for_status()
+
             # Step 4: 解析搜尋結果
             cases = self._parse_search_results(resp.text, resp.url)
 
@@ -188,57 +200,79 @@ class CourtCrawler:
         cases = []
         soup = BeautifulSoup(html, "lxml")
 
-        # 嘗試不同的結果容器選擇器
-        result_rows = soup.select("table.tab_results tr") or \
-                       soup.select("#jud table tr") or \
-                       soup.select(".search-result .result-item") or \
-                       soup.select("#result tr")
+        # FJUD iframe 中的 table
+        result_rows = soup.select("table#jud tbody tr") or \
+                      soup.select("table#jud tr") or \
+                      soup.select("table.tab_results tr")
 
-        for row in result_rows[:self.max_results]:
+        import urllib.parse
+        for row in result_rows:
+            if len(cases) >= self.max_results:
+                break
+            
+            # 通常第一欄是序號，第二欄是案號/法院，第三欄大小，第四欄日期，第五欄案由
+            cells = row.select("td")
+            if len(cells) < 4:
+                continue
+
             try:
-                cells = row.select("td")
-                if len(cells) < 3:
-                    continue
-
                 # 提取案件資訊
-                link_tag = row.select_one("a[href]")
+                link_tag = cells[1].select_one("a[href]") if len(cells) > 1 else None
                 detail_url = ""
                 jud_id = ""
+                case_number = ""
+                court_name = ""
                 
                 if link_tag:
                     href = link_tag.get("href", "")
+                    # "臺中高等行政法院 高等庭 114 年度 訴 字第 290 號裁定" -> court, case num
+                    case_text = link_tag.get_text(strip=True)
+                    parts = case_text.split(" ", 1)
+                    if len(parts) > 1:
+                        court_name = parts[0]
+                        case_number = parts[1]
+                    else:
+                        case_number = case_text
+
                     # 嘗試提取判決書 ID
                     if "id=" in href:
                         jud_id = href.split("id=")[-1].split("&")[0]
-                    elif "jid=" in href.lower():
-                        jud_id = href.split("jid=")[-1].split("&")[0]
                     
-                    # 構建正確的判決書直連 URL
                     if jud_id:
                         detail_url = f"https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id={jud_id}"
                     elif href and not href.startswith("http"):
-                        detail_url = f"{Config.COURT_BASE_URL}/{href}"
+                        detail_url = urllib.parse.urljoin(base_url, href)
                     else:
                         detail_url = href
 
-                case_number = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-                
-                # 如果沒有提取到 URL，根據案號構建搜尋 URL
-                if not detail_url and case_number:
-                    import urllib.parse
-                    encoded_case = urllib.parse.quote(case_number)
-                    detail_url = f"https://judgment.judicial.gov.tw/FJUD/default.aspx?kw={encoded_case}"
+                if not case_number and len(cells) > 1:
+                    case_number = cells[1].get_text(strip=True)
+
+                date_text = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+                title_text = cells[4].get_text(strip=True) if len(cells) > 4 else ""
+
+                # 提取 summary (通常緊接在案號 a tag 後面的 div，或者是下一行)
+                summary_text = ""
+                summary_div = cells[1].select_one("div.hl-area") or row.find("div", class_="hl-area")
+                if summary_div:
+                    summary_text = summary_div.get_text(strip=True)
+                else:
+                    # 也可能是直接接在字串後面
+                    full_text = cells[1].get_text(separator=' ', strip=True)
+                    if len(full_text) > len(case_text):
+                        summary_text = full_text[len(case_text):].strip()
 
                 case = CourtCase(
-                    court=cells[0].get_text(strip=True) if len(cells) > 0 else "",
+                    court=court_name,
                     case_number=case_number,
-                    title=cells[2].get_text(strip=True) if len(cells) > 2 else "",
-                    date=cells[3].get_text(strip=True) if len(cells) > 3 else "",
+                    title=title_text,
+                    date=date_text,
                     url=detail_url,
+                    summary=summary_text[:200]
                 )
 
                 # 分類案件類型
-                case.case_type = self._classify_case_type(case.title)
+                case.case_type = self._classify_case_type(case.title + " " + case.summary)
                 cases.append(case)
 
             except Exception as e:
@@ -429,10 +463,12 @@ class GoogleCourtSearcher:
         """
         results = []
 
-        # 合併關鍵字，減少請求次數（只做 3 次搜尋）
+        # 合併關鍵字，減少請求次數
         queries = [
-            (f"{name} 起訴 判刑 貪污 詐欺 犯罪", True),
-            (f"{name} 醜聞 爭議 違法 弊案 負面", True),
+            (f"{name} 提告 網友", True),
+            (f"{name} 妨害名譽 訴訟", True),
+            (f"{name} 判刑 貪污 詐欺", True),
+            (f"{name} 爭議 弊案 違法", True),
             (f"{name} 新聞 報導", False),
         ]
 
@@ -496,6 +532,7 @@ class GoogleCourtSearcher:
             "被告", "涉嫌", "遭控", "指控", "檢舉", "調查", "偵辦",
             "羈押", "交保", "緩刑", "有期徒刑", "罰金", "沒收",
             "犯罪", "前科", "入獄", "服刑", "坐牢", "監禁", "弊案",
+            "提告", "告網友", "妨害名譽", "公然侮辱", "告訴人", "濫訴"
         ]
 
     def _bing_search(self, query: str, is_negative: bool) -> list[dict]:
