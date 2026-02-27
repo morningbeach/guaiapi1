@@ -1,0 +1,600 @@
+/* ============================================
+   台灣公眾人物前科查詢機 - 正義白色主題
+   時尚・精巧・有正義感
+   ============================================ */
+
+/* ── 全域 ── */
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #f1f3f5;
+    --text-primary: #1a1a2e;
+    --text-secondary: #495057;
+    --text-muted: #868e96;
+    --border-color: #e9ecef;
+    --border-light: #f1f3f5;
+    --accent-primary: #1a1a2e;
+    --accent-blue: #228be6;
+    --accent-red: #e03131;
+    --accent-orange: #f76707;
+    --accent-yellow: #fab005;
+    --accent-green: #2f9e44;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.04);
+    --shadow-md: 0 4px 12px rgba(0,0,0,.06);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", 
+                 "PingFang TC", "Microsoft JhengHei", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    line-height: 1.6;
+    font-size: 15px;
+}
+
+/* ── 導航列 ── */
+.navbar {
+    background: var(--bg-primary) !important;
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    padding: 1rem 0;
+}
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: .5px;
+    color: var(--text-primary) !important;
+    font-size: 1.1rem;
+}
+.navbar-brand i {
+    color: var(--accent-primary);
+}
+.navbar-text {
+    color: var(--text-muted) !important;
+    font-size: .8rem;
+}
+
+/* ── 主容器 ── */
+.container {
+    max-width: 960px;
+}
+
+/* ── 搜尋區塊 ── */
+.search-section {
+    margin-top: 3rem;
+    margin-bottom: 2rem;
+}
+.search-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: var(--shadow-md);
+    transition: box-shadow .3s, transform .2s;
+}
+.search-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+.search-card h4 {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+.search-card .text-primary {
+    color: var(--accent-primary) !important;
+}
+
+/* 輸入框 */
+.input-group-text {
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    border-right: none;
+    color: var(--text-secondary);
+    padding: .75rem 1rem;
+}
+.form-control {
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 1rem;
+    padding: .75rem 1rem;
+}
+.form-control:focus {
+    background-color: var(--bg-primary);
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 3px rgba(26,26,46,.1);
+}
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+
+.form-select {
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: .9rem;
+    padding: .5rem .75rem;
+}
+.form-select:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(26,26,46,.1);
+}
+
+.form-check-input {
+    width: 1.1em;
+    height: 1.1em;
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+}
+.form-check-input:checked {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+.form-check-label {
+    color: var(--text-secondary);
+    font-size: .9rem;
+}
+
+/* 搜尋按鈕 */
+.btn-search {
+    padding: .75rem 2rem;
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: .3px;
+    border-radius: 0 10px 10px 0 !important;
+    border: 2px solid var(--accent-primary) !important;
+    border-left: none !important;
+}
+.btn-primary {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #fff;
+}
+.btn-primary:hover {
+    background: #2d2d44;
+    border-color: #2d2d44;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(26,26,46,.2);
+}
+
+/* ── 載入動畫 ── */
+.loading-step {
+    padding: .5rem 0;
+    font-size: .9rem;
+    color: var(--text-muted);
+    transition: color .3s;
+}
+.loading-step.active {
+    color: var(--accent-primary);
+    font-weight: 500;
+}
+.loading-step.done {
+    color: var(--accent-green);
+}
+.spinner-border {
+    color: var(--accent-primary) !important;
+}
+
+/* ── 風險卡片 ── */
+.risk-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    transition: border-color .3s;
+}
+
+/* 風險等級邊框色 */
+.risk-card.risk-extreme { border-left: 5px solid var(--accent-red); }
+.risk-card.risk-high    { border-left: 5px solid var(--accent-orange); }
+.risk-card.risk-medium  { border-left: 5px solid var(--accent-yellow); }
+.risk-card.risk-low     { border-left: 5px solid var(--accent-green); }
+.risk-card.risk-very-low{ border-left: 5px solid var(--accent-blue); }
+
+/* 風險儀表 */
+.risk-gauge {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    border: 4px solid var(--border-color);
+    background: var(--bg-secondary);
+    transition: border-color .5s, box-shadow .5s;
+}
+.risk-gauge.extreme {
+    border-color: var(--accent-red);
+    box-shadow: 0 0 24px rgba(224,49,49,.15);
+}
+.risk-gauge.high {
+    border-color: var(--accent-orange);
+    box-shadow: 0 0 24px rgba(247,103,7,.15);
+}
+.risk-gauge.medium {
+    border-color: var(--accent-yellow);
+    box-shadow: 0 0 24px rgba(250,176,5,.15);
+}
+.risk-gauge.low {
+    border-color: var(--accent-green);
+    box-shadow: 0 0 24px rgba(47,158,68,.15);
+}
+.risk-gauge.very-low {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 24px rgba(34,139,230,.15);
+}
+
+.risk-score {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text-primary);
+}
+.risk-label {
+    font-size: .85rem;
+    font-weight: 600;
+    margin-top: .25rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* 統計方塊 */
+.stat-box {
+    text-align: center;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border-light);
+}
+.stat-number {
+    font-size: 1.75rem;
+    font-weight: 800;
+}
+.stat-label {
+    font-size: .75rem;
+    color: var(--text-muted);
+    margin-top: .25rem;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.text-danger { color: var(--accent-red) !important; }
+.text-warning { color: var(--accent-orange) !important; }
+.text-info { color: var(--accent-blue) !important; }
+
+/* ── 標籤頁 ── */
+.nav-tabs {
+    border-bottom: 2px solid var(--border-color);
+    gap: .25rem;
+}
+.nav-tabs .nav-link {
+    color: var(--text-muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: .85rem 1.25rem;
+    font-weight: 500;
+    font-size: .9rem;
+    margin-bottom: -2px;
+    transition: all .2s;
+}
+.nav-tabs .nav-link:hover {
+    color: var(--text-primary);
+    border-color: var(--border-color);
+    background: var(--bg-secondary);
+}
+.nav-tabs .nav-link.active {
+    color: var(--accent-primary);
+    background: transparent;
+    border-bottom-color: var(--accent-primary);
+    font-weight: 600;
+}
+.tab-content {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    box-shadow: var(--shadow-sm);
+}
+
+/* ── 案件列表 ── */
+.case-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: .75rem;
+    transition: border-color .2s, box-shadow .2s;
+}
+.case-item:hover {
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-sm);
+}
+.case-type-badge {
+    font-size: .7rem;
+    padding: .3rem .65rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.badge-criminal {
+    background-color: rgba(224,49,49,.1);
+    color: var(--accent-red);
+}
+.badge-civil {
+    background-color: rgba(250,176,5,.1);
+    color: #c98c00;
+}
+.badge-admin {
+    background-color: rgba(34,139,230,.1);
+    color: var(--accent-blue);
+}
+.badge-other {
+    background-color: var(--bg-tertiary);
+    color: var(--text-muted);
+}
+
+/* ── 近親卡片 ── */
+.relative-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    transition: transform .2s, border-color .2s, box-shadow .2s;
+}
+.relative-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-md);
+}
+.relative-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto .75rem;
+    font-size: 1.25rem;
+}
+.relative-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: .95rem;
+}
+.relative-relation {
+    font-size: .8rem;
+    color: var(--text-muted);
+    margin-top: .15rem;
+}
+.confidence-tag {
+    font-size: .65rem;
+    padding: .2rem .5rem;
+    border-radius: 4px;
+    margin-top: .4rem;
+    display: inline-block;
+    font-weight: 500;
+}
+.confidence-high   { background: rgba(47,158,68,.1); color: var(--accent-green); }
+.confidence-medium { background: rgba(250,176,5,.1); color: #c98c00; }
+.confidence-low    { background: var(--bg-tertiary); color: var(--text-muted); }
+
+/* ── 關鍵發現 ── */
+.finding-item {
+    display: flex;
+    align-items: flex-start;
+    padding: .75rem 0;
+    border-bottom: 1px solid var(--border-light);
+}
+.finding-item:last-child {
+    border-bottom: none;
+}
+.finding-icon {
+    margin-right: .75rem;
+    margin-top: .1rem;
+    font-size: 1rem;
+}
+.finding-text {
+    flex: 1;
+    color: var(--text-primary);
+    font-size: .95rem;
+}
+
+/* ── 新聞 ── */
+.news-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-light);
+    transition: background .2s;
+}
+.news-item:hover {
+    background: var(--bg-secondary);
+}
+.news-item:last-child { border-bottom: none; }
+.news-item a {
+    color: var(--accent-primary);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: .95rem;
+}
+.news-item a:hover {
+    text-decoration: underline;
+    color: var(--accent-blue);
+}
+.news-snippet {
+    font-size: .85rem;
+    color: var(--text-muted);
+    margin-top: .35rem;
+    line-height: 1.5;
+}
+.news-source {
+    font-size: .75rem;
+    color: var(--text-muted);
+    margin-top: .25rem;
+}
+
+/* 負面新聞標籤 */
+.news-negative-tag {
+    display: inline-block;
+    font-size: .65rem;
+    padding: .15rem .4rem;
+    border-radius: 4px;
+    background: rgba(224,49,49,.1);
+    color: var(--accent-red);
+    font-weight: 600;
+    margin-left: .5rem;
+    vertical-align: middle;
+}
+
+/* ── 類別標籤 ── */
+.category-tag {
+    display: inline-block;
+    padding: .35rem .75rem;
+    margin: .2rem;
+    border-radius: 8px;
+    font-size: .8rem;
+    font-weight: 500;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+/* ── 建議區塊 ── */
+.recommendation-box {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    font-size: .9rem;
+    color: var(--text-secondary);
+}
+
+/* ── 近親風險 ── */
+.relative-risk-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: .85rem 1rem;
+    margin-bottom: .5rem;
+    font-size: .9rem;
+}
+
+/* ── 頁尾 ── */
+.footer {
+    background: var(--bg-primary) !important;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted) !important;
+}
+.footer a {
+    color: var(--accent-blue) !important;
+}
+
+/* ── 免責聲明 ── */
+.border-warning {
+    border: 1px solid rgba(250,176,5,.3) !important;
+    background: rgba(250,176,5,.03);
+    border-radius: 12px;
+}
+.border-warning .card-title {
+    color: #c98c00;
+    font-size: .9rem;
+}
+.border-warning .card-text {
+    color: var(--text-muted);
+}
+
+/* ── 錯誤訊息 ── */
+.alert-danger {
+    background: rgba(224,49,49,.05);
+    border: 1px solid rgba(224,49,49,.2);
+    color: var(--accent-red);
+    border-radius: 12px;
+}
+
+/* ── Badge ── */
+.badge.bg-secondary {
+    background: var(--bg-tertiary) !important;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.badge.bg-info {
+    background: rgba(34,139,230,.1) !important;
+    color: var(--accent-blue);
+}
+
+/* ── 響應式 ── */
+@media (max-width: 768px) {
+    .search-section {
+        margin-top: 1.5rem;
+    }
+    .risk-gauge {
+        width: 100px;
+        height: 100px;
+    }
+    .risk-score {
+        font-size: 1.8rem;
+    }
+    .stat-number {
+        font-size: 1.3rem;
+    }
+    .btn-search {
+        padding: .75rem 1rem;
+    }
+    .nav-tabs .nav-link {
+        padding: .65rem .75rem;
+        font-size: .8rem;
+    }
+}
+
+/* ── 動畫 ── */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+    animation: fadeInUp .4s ease-out;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .6; }
+}
+.pulse {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes countUp {
+    from { opacity: 0; transform: scale(.8); }
+    to   { opacity: 1; transform: scale(1); }
+}
+.count-up {
+    animation: countUp .5s ease-out;
+}
+
+/* ── 無資料狀態 ── */
+.empty-state {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+.empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    opacity: .5;
+}
+.empty-state p {
+    margin-bottom: .5rem;
+}
+.empty-state small {
+    font-size: .8rem;
+}
