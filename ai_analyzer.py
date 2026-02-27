@@ -99,7 +99,8 @@ class AIAnalyzer:
 - 「被告」不等於「有罪」，須注意判決結果
 - 「原告」頻繁提告妨害名譽可能是濫訴恫嚇
 - 必須加入適當的免責聲明
-- 保持客觀中立，不做政治立場判斷"""
+- 保持客觀中立，不做政治立場判斷
+- 【重要】如果 AI 判斷此人值得信任（例如案件均為無罪或遭人誣陷者），請在 recommendations 中明確寫出「根據現有資料判斷此人值得信任」；如果不值得，請明確列舉其犯過的罪行與行為模式，「不可含糊帶過」。"""
 
     def __init__(self):
         self.provider = "none"
@@ -121,6 +122,99 @@ class AIAnalyzer:
             logger.info("已啟用 OpenAI AI 分析")
         else:
             logger.warning("未設定任何 AI API Key，AI 分析功能將無法完整運作")
+
+    # ========== 階段一：AI 篩選最值得深入調查的案件 ==========
+    
+    SELECT_CASES_PROMPT = """你是一位台灣法律分析師。以下是某位公眾人物在司法院裁判書查詢系統中找到的所有相關案件列表。
+請分析這些案件標題與摘要，挑選出「最值得深入調查的 3 篇」。
+
+挑選標準（優先級從高到低）：
+1. 與「目標人物」最相關的案件（注意化名如「邱Ｏ軒」可能與「邱于軒」是同一人，但也可能不是）
+2. 重大刑事案件（殺人、詐欺、毒品、貲污、假文書等）
+3. 顯示「濫訴」跡象的案件（頻繁提告妨害名譽、恐嚇等）
+4. 與該公眾人物新聞報導相符的案件
+
+請以純 JSON 格式回覆，不要包含 markdown 標記：
+{
+    "selected_indices": [0, 3, 7],
+    "reasons": ["選擇原因1", "選擇原因2", "選擇原因3"]
+}
+請只回傳 JSON，不要包含任何其他文字。"""
+
+    def select_top_cases(self, name: str, cases_summary: list[dict], news_results: list[dict] = None) -> list[int]:
+        """
+        階段一 AI 篩選：從案件列表中挑選最值得深入調查的 3 篇。
+        
+        Args:
+            name: 目標公眾人物姓名
+            cases_summary: [{"index": 0, "court": "...", "case_number": "...", "title": "...", "date": "...", "search_name": "..."}]
+            news_results: 新聞搜尋結果
+            
+        Returns:
+            最值得調查的案件索引列表 (0-based)
+        """
+        if not self.client or not cases_summary:
+            # 無 AI 時，預設回傳前 3 筆
+            return [i for i in range(min(3, len(cases_summary)))]
+        
+        # 建構 user prompt
+        prompt_parts = [f"查詢對象：{name}\n"]
+        
+        if news_results:
+            prompt_parts.append("相關新聞摘要：")
+            for item in news_results[:5]:
+                neg_tag = "【負面】" if item.get("is_negative") else ""
+                prompt_parts.append(f"- {neg_tag}{item.get('title', '')}")
+            prompt_parts.append("")
+        
+        prompt_parts.append(f"共找到 {len(cases_summary)} 筆相關案件：\n")
+        for c in cases_summary:
+            prompt_parts.append(
+                f"[{c['index']}] {c.get('court', '')} {c.get('case_number', '')} | "
+                f"案由: {c.get('title', '未知')} | "
+                f"搜尋名: {c.get('search_name', name)}"
+            )
+        
+        user_prompt = "\n".join(prompt_parts)
+        
+        try:
+            if self.provider == "anthropic":
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=500,
+                    temperature=0.1,
+                    system=self.SELECT_CASES_PROMPT,
+                    messages=[{"role": "user", "content": user_prompt}]
+                )
+                result_text = response.content[0].text.strip()
+            elif self.provider == "openai":
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.SELECT_CASES_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.1,
+                    max_tokens=500,
+                    response_format={"type": "json_object"},
+                )
+                result_text = response.choices[0].message.content
+            else:
+                return [i for i in range(min(3, len(cases_summary)))]
+            
+            # 解析 JSON
+            if result_text.startswith("```"):
+                result_text = result_text.strip("`").replace("json", "", 1).strip()
+            data = json.loads(result_text)
+            indices = data.get("selected_indices", [0, 1, 2])
+            reasons = data.get("reasons", [])
+            
+            logger.info(f"AI 篩選結果：索引 {indices}，原因: {reasons}")
+            return indices[:3]  # 最多 3 篇
+            
+        except Exception as e:
+            logger.error(f"AI 篩選失敗: {e}，預設回傳前 3 筆")
+            return [i for i in range(min(3, len(cases_summary)))]
 
     def analyze(
         self,
@@ -300,6 +394,23 @@ class AIAnalyzer:
             "請根據以上資料進行風險評估。\n"
             f"**重要**：本查詢發現近親有 {rel_criminal} 件刑事案件、{rel_civil} 件民事案件，"
             "這些必須納入風險分數計算，即使本人沒有案件記錄。\n"
+        )
+        
+        # 加入案件統計撮要
+        if hasattr(self, '_case_stats') and self._case_stats:
+            stats = self._case_stats
+            prompt_parts.append(
+                f"\n## 案件統計概觀\n"
+                f"- 全名搜尋到的相關案件數: {stats.get('total_cases', 0)} 筆\n"
+                f"- 其中包含化名案件: {stats.get('redacted_cases', 0)} 筆\n"
+                f"- 刑事案件統計: {stats.get('criminal_total', 0)} 筆\n"
+                f"- 民事案件統計: {stats.get('civil_total', 0)} 筆\n"
+            )
+        
+        prompt_parts.append(
+            "\n【重要】如果你判斷此人仍然值得信任（例如案件均被判無罪或為遍人誣陷者），"
+            "請在 recommendations 中明確標註『根據現有資料判斷此人值得信任』。"
+            "如果不值得，請明確列舉其犯過的罪行並給出嚴厲的警告。\n"
             "請以 JSON 格式回覆。"
         )
 

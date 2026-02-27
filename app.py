@@ -79,7 +79,9 @@ def search():
 
         logger.info(f"開始查詢：{name}")
 
+        # ═══════════════════════════════════════════════════
         # Step 1: 搜尋近親
+        # ═══════════════════════════════════════════════════
         relatives = []
         if search_relatives:
             logger.info(f"正在搜尋 {name} 的近親...")
@@ -87,92 +89,177 @@ def search():
             relatives = [r.to_dict() for r in relatives_obj]
             logger.info(f"找到 {len(relatives)} 位近親")
 
-        # Step 2: 爬取法院資料（本人）
-        logger.info(f"正在搜尋 {name} 的法院裁判書...")
+        # ═══════════════════════════════════════════════════
+        # Step 2: 階段一 — 廣泛名單探索（僅抓取列表標題與摘要）
+        # ═══════════════════════════════════════════════════
+        logger.info(f"【階段一】正在搜尋 {name} 的法院裁判書列表...")
         court_cases_obj = court_crawler.search_by_name(name, case_type)
         court_cases = [c.to_dict() for c in court_cases_obj]
 
-        # 過濾掉錯誤的 FJUD 最新裁判（姓名未出現在案由、裁判字號或摘要中）
-        # 同時涵蓋化名情況
-        name_variants = [name]
-        if len(name) == 2:
-            name_variants.extend([f"{name[0]}Ｏ", f"{name[0]}○"])
-        elif len(name) == 3:
-            name_variants.extend([f"{name[0]}Ｏ{name[2]}", f"{name[0]}○{name[2]}"])
-        elif len(name) >= 4:
-            name_variants.extend([f"{name[0]}Ｏ{name[2:]}", f"{name[0]}○{name[2:]}"])
+        # 過濾掉明顯的假資料（例如「法學資料檢索系統」的測試頁面）
+        court_cases = [
+            c for c in court_cases 
+            if "法學資料檢索系統" not in str(c.get("case_number", ""))
+        ]
 
-        filtered_cases = []
-        for case in court_cases:
-            combined = str(case.get("title", "")) + str(case.get("case_number", "")) + str(case.get("summary", ""))
+        logger.info(f"【階段一】找到 {len(court_cases)} 筆法院記錄")
+
+        # 統計刑事 / 民事案件數量
+        criminal_keywords = ["刑事", "上訴", "簡", "訴", "金訴", "金簡", "原訴", "原簡", "軍訴"]
+        criminal_count = 0
+        civil_count = 0
+        for c in court_cases:
+            cn = str(c.get("case_number", ""))
+            ct = str(c.get("case_type", ""))
+            if ct == "刑事" or "刑事" in cn or any(kw in cn for kw in criminal_keywords):
+                criminal_count += 1
+            else:
+                civil_count += 1
+
+        # ═══════════════════════════════════════════════════
+        # Step 2.5: 檢查 > 15 筆高風險阻斷
+        # ═══════════════════════════════════════════════════
+        if criminal_count > 15:
+            logger.warning(f"【高風險阻斷】{name} 刑事案件 {criminal_count} 筆，觸發阻斷！")
             
-            # 只要有一個變體符合就可以
-            has_match = any(variant in combined for variant in name_variants)
+            # Google 新聞搜尋（仍執行，供前端顯示）
+            news_results = google_searcher.search(name)
             
-            if has_match or "法學資料檢索系統" in str(case.get("case_number", "")):
-                # 排除 FJUD 最新裁判的假資料
-                if "法學資料檢索系統" not in str(case.get("case_number", "")):
-                    filtered_cases.append(case)
-        court_cases = filtered_cases
+            return jsonify({
+                "success": True,
+                "data": {
+                    "name": name,
+                    "court_cases": court_cases[:20],  # 僅回傳前 20 筆標題
+                    "relatives": relatives,
+                    "news_results": news_results[:15],
+                    "risk_assessment": {
+                        "overall_risk": "極高",
+                        "risk_score": 95,
+                        "criminal_count": criminal_count,
+                        "civil_count": civil_count,
+                        "categories": ["刑事案件密集"],
+                        "key_findings": [
+                            f"⚠️ 此人在司法院裁判書系統中搜尋到 {criminal_count} 筆刑事相關案件，數量異常極高！",
+                            "系統已自動觸發高風險阻斷機制，建議直接前往司法院網站查閱。",
+                            f"總計發現 {len(court_cases)} 筆相關案件（含化名搜尋結果）。",
+                        ],
+                        "summary": (
+                            f"「{name}」在法院裁判書查詢系統中被發現有 {criminal_count} 筆刑事相關案件，"
+                            f"總計 {len(court_cases)} 筆相關紀錄。此訴訟頻率異常極高，"
+                            "系統判定為極高風險，強烈建議使用者直接前往司法院網站親自查閱完整內容。"
+                        ),
+                        "relative_risks": [],
+                        "recommendations": (
+                            f"⚠️ 極高風險警告：此人涉及 {criminal_count} 筆刑事案件。"
+                            "請直接前往 https://judgment.judicial.gov.tw 輸入其姓名進行完整檢索。"
+                            "此數量已超過系統安全閾值，不建議盲目信任此人。"
+                        ),
+                        "disclaimer": "本報告基於司法院公開裁判書系統檢索結果自動生成，資料可能包含同名同姓者，請以官方資料為準。",
+                    },
+                },
+            })
 
-        # 深度爬取本人判決書全文（前3筆）
-        for case in court_cases[:3]:
-            if case.get('url') and not case.get('full_text'):
-                logger.info(f"正在深度爬取本人判決書全文: {case.get('case_number')}")
-                detail = court_crawler.get_case_detail(case['url'])
-                if detail:
-                    case['full_text'] = detail.full_text
-                    if detail.verdict:
-                        case['verdict'] = detail.verdict
-
-        logger.info(f"找到 {len(court_cases)} 筆法院記錄")
-
-        # Step 3: 爬取法院資料（近親）
-        for relative in relatives[:5]:  # 最多查詢 5 位近親
-            rel_name = relative.get("name", "")
-            if rel_name:
-                logger.info(f"正在搜尋近親 {rel_name} 的法院裁判書...")
-                rel_cases = court_crawler.search_by_name(rel_name, case_type)
-                
-                # 深度爬取近親判決書全文（每個近親前2筆）
-                # 產生近親化名變體
-                rel_variants = [rel_name]
-                if len(rel_name) == 2:
-                    rel_variants.extend([f"{rel_name[0]}Ｏ", f"{rel_name[0]}○"])
-                elif len(rel_name) == 3:
-                    rel_variants.extend([f"{rel_name[0]}Ｏ{rel_name[2]}", f"{rel_name[0]}○{rel_name[2]}"])
-                elif len(rel_name) >= 4:
-                    rel_variants.extend([f"{rel_name[0]}Ｏ{rel_name[2:]}", f"{rel_name[0]}○{rel_name[2:]}"])
-
-                filtered_rel_cases = []
-                for case_obj in rel_cases:
-                    cd = case_obj.to_dict()
-                    combined = str(cd.get("title", "")) + str(cd.get("case_number", "")) + str(cd.get("summary", ""))
-                    
-                    has_match = any(variant in combined for variant in rel_variants)
-                    if has_match and "法學資料檢索系統" not in str(cd.get("case_number", "")):
-                        filtered_rel_cases.append(cd)
-
-                for i, case_dict in enumerate(filtered_rel_cases):
-                    if i < 2 and case_dict.get('url') and not case_dict.get('full_text'):
-                        logger.info(f"正在深度爬取近親判決書全文: {case_dict.get('case_number')}")
-                        detail = court_crawler.get_case_detail(case_dict['url'])
-                        if detail:
-                            case_dict['full_text'] = detail.full_text
-                            if detail.verdict:
-                                case_dict['verdict'] = detail.verdict
-
-                    case_dict["related_person"] = rel_name
-                    case_dict["relation"] = relative.get("relation", "")
-                    court_cases.append(case_dict)
-
-        # Step 4: Google 補充搜尋
+        # ═══════════════════════════════════════════════════
+        # Step 3: Google 補充搜尋（新聞資料）
+        # ═══════════════════════════════════════════════════
         logger.info(f"正在進行 Google 補充搜尋...")
         news_results = google_searcher.search(name)
         logger.info(f"找到 {len(news_results)} 筆相關網路資料")
 
-        # Step 5: AI 風險分析
-        logger.info(f"正在進行 AI 風險分析...")
+        # ═══════════════════════════════════════════════════
+        # Step 4: 階段一 AI 篩選 — 讓 AI 挑選最值得深入調查的 3 篇
+        # ═══════════════════════════════════════════════════
+        if court_cases:
+            # 建構摘要供 AI 篩選（需要記住每一筆在哪個搜尋變體名下找到的）
+            cases_summary = []
+            for i, c in enumerate(court_cases):
+                cases_summary.append({
+                    "index": i,
+                    "court": c.get("court", ""),
+                    "case_number": c.get("case_number", ""),
+                    "title": c.get("title", ""),
+                    "date": c.get("date", ""),
+                    "search_name": c.get("case_number", "").split(" ")[0] if c.get("case_number") else name,
+                })
+
+            logger.info(f"【AI 篩選】正在請 AI 從 {len(cases_summary)} 筆中挑選最值得調查的 3 篇...")
+            selected_indices = ai_analyzer.select_top_cases(name, cases_summary, news_results)
+            logger.info(f"【AI 篩選】AI 挑選結果：索引 {selected_indices}")
+
+            # ═══════════════════════════════════════════════════
+            # Step 5: 階段二 — 精準全文調閱（僅抓取 AI 指定的 3 篇）
+            # ═══════════════════════════════════════════════════
+            # 需要將全域索引轉換為每個搜尋變體的本地索引
+            # 由於 search_by_name 已合併所有變體的結果，我們需要重新搜尋
+            # 最簡單的方式：直接用全名搜尋一次，用索引對應
+            if selected_indices:
+                logger.info(f"【階段二】精準抓取 {len(selected_indices)} 篇判決全文...")
+                # 嘗試用全名搜尋（因為列表是合併的，我們需要找到適合的搜尋詞）
+                # 我們依序嘗試每個變體
+                search_variants = [name] + court_crawler._generate_redacted_names(name)
+                
+                fetched = set()  # 已成功抓取的全域索引
+                
+                for variant in search_variants:
+                    # 找出此 variant 對應的案件在全域列表中的索引
+                    variant_cases = court_crawler._search_fjud(variant, case_type)
+                    variant_case_numbers = {vc.case_number for vc in variant_cases if vc.case_number}
+                    
+                    # 找出尚未抓取且屬於此 variant 的目標索引
+                    variant_targets = []
+                    for si in selected_indices:
+                        if si < len(court_cases) and si not in fetched:
+                            target_cn = court_cases[si].get("case_number", "")
+                            if target_cn in variant_case_numbers:
+                                # 找到此案件在 variant 搜尋結果中的本地索引
+                                for local_idx, vc in enumerate(variant_cases):
+                                    if vc.case_number == target_cn:
+                                        variant_targets.append((si, local_idx))
+                                        break
+                    
+                    if variant_targets:
+                        local_indices = [vt[1] for vt in variant_targets]
+                        detail_results = court_crawler.fetch_specific_cases(variant, local_indices, case_type)
+                        
+                        for dr in detail_results:
+                            # 找到對應的全域索引
+                            for si, local_idx in variant_targets:
+                                if dr["index"] == local_idx:
+                                    court_cases[si]["full_text"] = dr["full_text"]
+                                    court_cases[si]["verdict"] = dr["verdict"]
+                                    fetched.add(si)
+                                    logger.info(f"成功抓取索引 {si} 的判決全文 ({len(dr['full_text'])} 字)")
+                                    break
+
+        # ═══════════════════════════════════════════════════
+        # Step 6: 爬取法院資料（近親）— 僅抓列表，不深度爬取
+        # ═══════════════════════════════════════════════════
+        for relative in relatives[:5]:
+            rel_name = relative.get("name", "")
+            if rel_name:
+                logger.info(f"正在搜尋近親 {rel_name} 的法院裁判書...")
+                rel_cases = court_crawler.search_by_name(rel_name, case_type)
+
+                for case_obj in rel_cases:
+                    cd = case_obj.to_dict()
+                    if "法學資料檢索系統" not in str(cd.get("case_number", "")):
+                        cd["related_person"] = rel_name
+                        cd["relation"] = relative.get("relation", "")
+                        court_cases.append(cd)
+
+        # ═══════════════════════════════════════════════════
+        # Step 7: AI 最終風險分析（含完整判決全文 + 新聞資料 + 統計數據）
+        # ═══════════════════════════════════════════════════
+        logger.info(f"正在進行 AI 最終風險分析...")
+        
+        # 將統計數據傳給 AI
+        ai_analyzer._case_stats = {
+            "total_cases": len(court_cases),
+            "redacted_cases": sum(1 for c in court_cases if any(x in str(c.get("case_number", "")) for x in ["Ｏ", "○"])),
+            "criminal_total": criminal_count,
+            "civil_total": civil_count,
+        }
+        
         risk_assessment = ai_analyzer.analyze(
             name=name,
             court_cases=court_cases,
@@ -187,7 +274,7 @@ def search():
                 "name": name,
                 "court_cases": court_cases,
                 "relatives": relatives,
-                "news_results": news_results[:15],  # 最多15條（負面優先）
+                "news_results": news_results[:15],
                 "risk_assessment": risk_assessment.to_dict(),
             },
         })

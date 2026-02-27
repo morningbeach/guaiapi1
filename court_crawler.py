@@ -164,33 +164,9 @@ class CourtCrawler:
                     browser.close()
                     return cases
 
-                # 解析 iframe 內的 HTML
+                # 解析 iframe 內的 HTML（階段一：僅抓取列表，不點進內文）
                 html = iframe_locator.locator("body").inner_html()
                 cases = self._parse_search_results(html, page.url)
-
-                # 在同一個連線畫面中，模擬人類操作直接點進判決書抓取前 5 筆內文
-                for i in range(min(5, len(cases))):
-                    try:
-                        # 每次操作後頁面結構可能重製，因此必須重新抓取標籤
-                        links = page.frame_locator("#iframe-data").locator("table#jud tr a").element_handles()
-                        if i >= len(links):
-                            break
-                            
-                        links[i].click()
-                        
-                        detail_locator = page.frame_locator("#iframe-data").locator(".jud_content, #jud_content, .judgement-content, #divJudContent, pre").first
-                        detail_locator.wait_for(timeout=10000)
-                        
-                        full_text = detail_locator.inner_text()
-                        cases[i].full_text = full_text[:10000] # 最多擷取 10000 字
-                        cases[i].verdict = self._extract_verdict(full_text)
-                        
-                        # 點擊上一頁返回裁判書列表
-                        page.evaluate("window.history.back()")
-                        # 等待搜尋陣列重新出現
-                        page.frame_locator("#iframe-data").locator("table#jud").wait_for(timeout=10000)
-                    except Exception as e:
-                        logger.warning(f"擷取 {name} 第 {i+1} 筆判決全文失敗: {e}")
 
                 browser.close()
 
@@ -198,6 +174,81 @@ class CourtCrawler:
             logger.error(f"FJUD Playwright 搜尋發生錯誤: {e}")
 
         return cases
+
+    def fetch_specific_cases(self, name: str, target_indices: list[int], case_type: str = "all") -> list[dict]:
+        """
+        階段二：針對 AI 挑選的案件索引，精準抓取全文。
+        會重新搜尋同一個關鍵字，然後僅點擊指定索引的案件連結。
+        
+        Args:
+            name: 搜尋用的姓名（可能是全名或化名）
+            target_indices: AI 挑選的案件在列表中的索引 (0-based)
+            case_type: 案件類型
+            
+        Returns:
+            含有 full_text 的案件 dict 列表
+        """
+        results = []
+        logger.info(f"階段二精準抓取：{name}，目標索引: {target_indices}")
+        
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={'width': 1280, 'height': 800}
+                )
+                page = context.new_page()
+                page.goto(Config.COURT_SEARCH_URL, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_selector("#txtKW", timeout=10000)
+                page.fill("#txtKW", name)
+
+                if case_type == "criminal":
+                    page.locator('input[name="judtype"][value="3"]').check()
+                elif case_type == "civil":
+                    page.locator('input[name="judtype"][value="1"]').check()
+
+                with page.expect_navigation(wait_until="domcontentloaded", timeout=20000):
+                    page.click("#btnSimpleQry")
+
+                iframe_locator = page.frame_locator("#iframe-data")
+                try:
+                    iframe_locator.locator("table#jud").wait_for(timeout=15000)
+                except PlaywrightTimeoutError:
+                    browser.close()
+                    return results
+
+                # 按照索引依序點擊（從小到大排序，以確保 history.back() 正確回到列表）
+                for idx in sorted(target_indices):
+                    try:
+                        links = page.frame_locator("#iframe-data").locator("table#jud tr a").element_handles()
+                        if idx >= len(links):
+                            continue
+
+                        links[idx].click()
+
+                        detail_locator = page.frame_locator("#iframe-data").locator(
+                            ".jud_content, #jud_content, .judgement-content, #divJudContent, pre"
+                        ).first
+                        detail_locator.wait_for(timeout=10000)
+
+                        full_text = detail_locator.inner_text()
+                        results.append({
+                            "index": idx,
+                            "full_text": full_text[:10000],
+                            "verdict": self._extract_verdict(full_text),
+                        })
+
+                        page.evaluate("window.history.back()")
+                        page.frame_locator("#iframe-data").locator("table#jud").wait_for(timeout=10000)
+                    except Exception as e:
+                        logger.warning(f"精準擷取 {name} 索引 {idx} 失敗: {e}")
+
+                browser.close()
+        except Exception as e:
+            logger.error(f"精準擷取 Playwright 錯誤: {e}")
+
+        return results
 
     def _search_opendata(self, name: str, case_type: str) -> list[CourtCase]:
         """
