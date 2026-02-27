@@ -93,18 +93,31 @@ def search():
         court_cases = [c.to_dict() for c in court_cases_obj]
 
         # 過濾掉錯誤的 FJUD 最新裁判（姓名未出現在案由、裁判字號或摘要中）
+        # 同時涵蓋化名情況
+        name_variants = [name]
+        if len(name) == 2:
+            name_variants.extend([f"{name[0]}Ｏ", f"{name[0]}○"])
+        elif len(name) == 3:
+            name_variants.extend([f"{name[0]}Ｏ{name[2]}", f"{name[0]}○{name[2]}"])
+        elif len(name) >= 4:
+            name_variants.extend([f"{name[0]}Ｏ{name[2:]}", f"{name[0]}○{name[2:]}"])
+
         filtered_cases = []
         for case in court_cases:
             combined = str(case.get("title", "")) + str(case.get("case_number", "")) + str(case.get("summary", ""))
-            if name in combined or "法學資料檢索系統" in str(case.get("case_number", "")):
-                # 如果是法學資料檢索系統這類系統本身的條目，我們也保留讓 AI 判斷（或拋棄）
+            
+            # 只要有一個變體符合就可以
+            has_match = any(variant in combined for variant in name_variants)
+            
+            if has_match or "法學資料檢索系統" in str(case.get("case_number", "")):
+                # 排除 FJUD 最新裁判的假資料
                 if "法學資料檢索系統" not in str(case.get("case_number", "")):
                     filtered_cases.append(case)
         court_cases = filtered_cases
 
         # 深度爬取本人判決書全文（前3筆）
         for case in court_cases[:3]:
-            if case.get('url'):
+            if case.get('url') and not case.get('full_text'):
                 logger.info(f"正在深度爬取本人判決書全文: {case.get('case_number')}")
                 detail = court_crawler.get_case_detail(case['url'])
                 if detail:
@@ -122,15 +135,26 @@ def search():
                 rel_cases = court_crawler.search_by_name(rel_name, case_type)
                 
                 # 深度爬取近親判決書全文（每個近親前2筆）
+                # 產生近親化名變體
+                rel_variants = [rel_name]
+                if len(rel_name) == 2:
+                    rel_variants.extend([f"{rel_name[0]}Ｏ", f"{rel_name[0]}○"])
+                elif len(rel_name) == 3:
+                    rel_variants.extend([f"{rel_name[0]}Ｏ{rel_name[2]}", f"{rel_name[0]}○{rel_name[2]}"])
+                elif len(rel_name) >= 4:
+                    rel_variants.extend([f"{rel_name[0]}Ｏ{rel_name[2:]}", f"{rel_name[0]}○{rel_name[2:]}"])
+
                 filtered_rel_cases = []
                 for case_obj in rel_cases:
                     cd = case_obj.to_dict()
                     combined = str(cd.get("title", "")) + str(cd.get("case_number", "")) + str(cd.get("summary", ""))
-                    if rel_name in combined and "法學資料檢索系統" not in str(cd.get("case_number", "")):
+                    
+                    has_match = any(variant in combined for variant in rel_variants)
+                    if has_match and "法學資料檢索系統" not in str(cd.get("case_number", "")):
                         filtered_rel_cases.append(cd)
 
                 for i, case_dict in enumerate(filtered_rel_cases):
-                    if i < 2 and case_dict.get('url'):
+                    if i < 2 and case_dict.get('url') and not case_dict.get('full_text'):
                         logger.info(f"正在深度爬取近親判決書全文: {case_dict.get('case_number')}")
                         detail = court_crawler.get_case_detail(case_dict['url'])
                         if detail:

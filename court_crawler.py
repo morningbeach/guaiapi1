@@ -58,6 +58,22 @@ class CourtCrawler:
         """禮貌性延遲，避免對伺服器造成負擔"""
         time.sleep(self.delay)
 
+    def _generate_redacted_names(self, name: str) -> list[str]:
+        """產生司法院常用的隱蔽姓名變體"""
+        if not name or len(name) < 2:
+            return []
+        
+        variants = []
+        if len(name) == 2:
+            variants.extend([f"{name[0]}Ｏ", f"{name[0]}○"])
+        elif len(name) == 3:
+            variants.extend([f"{name[0]}Ｏ{name[2]}", f"{name[0]}○{name[2]}"])
+        elif len(name) >= 4:
+            # 有些複姓或是名字很長的情況，通常隱藏第二個字
+            variants.extend([f"{name[0]}Ｏ{name[2:]}", f"{name[0]}○{name[2:]}"])
+            
+        return list(set(variants))
+
     # ─────────────────────────────────────────
     # 方法 1：司法院裁判書查詢系統 (FJUD 網頁)
     # ─────────────────────────────────────────
@@ -75,8 +91,26 @@ class CourtCrawler:
         """
         cases = []
         try:
-            # 使用司法院裁判書查詢系統的搜尋功能
-            cases = self._search_fjud(name, case_type)
+            # 1. 先搜尋全名
+            logger.info(f"開始搜尋全名：{name}")
+            cases.extend(self._search_fjud(name, case_type))
+            
+            # 2. 搜尋隱蔽化名 (例如 邱Ｏ軒、邱○軒)
+            redacted_names = self._generate_redacted_names(name)
+            for redacted in redacted_names:
+                logger.info(f"擴充搜尋隱蔽化名：{redacted}")
+                cases.extend(self._search_fjud(redacted, case_type))
+                
+            # 3. 去除重複案號 (依據 case_number 或 url)
+            unique_cases = {}
+            for case in cases:
+                # 若案號為空，用 URL 當 key
+                key = case.case_number if case.case_number else case.url
+                if key and key not in unique_cases:
+                    unique_cases[key] = case
+            
+            cases = list(unique_cases.values())
+            
         except Exception as e:
             logger.error(f"FJUD 搜尋失敗: {e}")
 
@@ -133,6 +167,30 @@ class CourtCrawler:
                 # 解析 iframe 內的 HTML
                 html = iframe_locator.locator("body").inner_html()
                 cases = self._parse_search_results(html, page.url)
+
+                # 在同一個連線畫面中，模擬人類操作直接點進判決書抓取前 5 筆內文
+                for i in range(min(5, len(cases))):
+                    try:
+                        # 每次操作後頁面結構可能重製，因此必須重新抓取標籤
+                        links = page.frame_locator("#iframe-data").locator("table#jud tr a").element_handles()
+                        if i >= len(links):
+                            break
+                            
+                        links[i].click()
+                        
+                        detail_locator = page.frame_locator("#iframe-data").locator(".jud_content, #jud_content, .judgement-content, #divJudContent, pre").first
+                        detail_locator.wait_for(timeout=10000)
+                        
+                        full_text = detail_locator.inner_text()
+                        cases[i].full_text = full_text[:10000] # 最多擷取 10000 字
+                        cases[i].verdict = self._extract_verdict(full_text)
+                        
+                        # 點擊上一頁返回裁判書列表
+                        page.evaluate("window.history.back()")
+                        # 等待搜尋陣列重新出現
+                        page.frame_locator("#iframe-data").locator("table#jud").wait_for(timeout=10000)
+                    except Exception as e:
+                        logger.warning(f"擷取 {name} 第 {i+1} 筆判決全文失敗: {e}")
 
                 browser.close()
 
