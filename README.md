@@ -1,114 +1,20 @@
-# 🔍 台灣公眾人物前科查詢機
+# guaiapi1
 
-> 輸入姓名 → 自動搜尋近親 → 爬取法院公開裁判書 → AI 風險評估
+A private investigation and tracking system.  
+Designed for advanced users only.
 
----
+## Requirements
 
-## 📋 功能特色
+You must provide the following API keys via environment variables or a `.env` file to run this system:
 
-| 功能 | 說明 |
-|------|------|
-| 🔎 姓名查詢 | 輸入公眾人物姓名，一鍵查詢 |
-| 👨‍👩‍👧‍👦 近親搜尋 | 自動從維基百科、新聞報導搜尋近親 |
-| ⚖️ 法院爬蟲 | 爬取司法院公開裁判書查詢系統 |
-| 🤖 AI 風險評估 | 使用 OpenAI GPT 模型綜合分析風險 |
-| 📊 風險儀表板 | 視覺化的風險等級、案件統計 |
+1. `OPENAI_API_KEY` (Optional for basic API)
+2. `ANTHROPIC_API_KEY` (Required for full deep analysis)
 
-## 🏗️ 系統架構
+## Setup
 
-```
-公眾人物前科查詢機/
-├── app.py                  # Flask 主應用程式
-├── config.py               # 集中設定管理
-├── court_crawler.py        # 司法院裁判書爬蟲
-├── relative_finder.py      # 近親搜尋模組
-├── ai_analyzer.py          # AI 風險分析模組
-├── requirements.txt        # Python 套件依賴
-├── .env.example            # 環境變數範本
-├── templates/
-│   └── index.html          # 網頁介面
-└── static/
-    ├── css/style.css       # 樣式表
-    └── js/app.js           # 前端 JavaScript
-```
+1. Copy `.env.example` to `.env`
+2. Fill your API keys
+3. `pip install -r requirements.txt`
+4. `python app.py`
 
-## 🚀 快速開始
-
-### 1. 安裝依賴
-
-```bash
-cd 公眾人物前科查詢機
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. 設定環境變數
-
-```bash
-cp .env.example .env
-```
-
-編輯 `.env`，填入你的 OpenAI API Key：
-
-```
-OPENAI_API_KEY=sk-your-api-key-here
-```
-
-### 3. 啟動應用程式
-
-```bash
-python app.py
-```
-
-瀏覽器打開 **http://127.0.0.1:5000** 即可使用。
-
-## 📖 使用方式
-
-1. 在搜尋框輸入公眾人物姓名
-2. 選擇是否同時搜尋近親（預設開啟）
-3. 選擇案件類型篩選（全部/刑事/民事/行政）
-4. 點擊「開始查詢」
-5. 等待系統完成：
-   - 搜尋近親資料
-   - 爬取法院裁判書
-   - Google 補充搜尋
-   - AI 風險分析
-6. 查看風險評估報告
-
-## 📊 風險等級定義
-
-| 等級 | 分數 | 說明 |
-|------|------|------|
-| 🔴 極高 | 80-100 | 有重大刑事定罪記錄（貪污、重大詐欺、暴力犯罪等） |
-| 🟠 高 | 60-79 | 有刑事定罪記錄或多項爭議 |
-| 🟡 中 | 40-59 | 有民事糾紛或輕微法律爭議 |
-| 🟢 低 | 20-39 | 僅有少量民事案件或已和解 |
-| 🔵 極低 | 0-19 | 幾乎無法律爭議記錄 |
-
-## 🔧 技術細節
-
-### 資料來源
-
-- **司法院裁判書查詢系統** — https://judgment.judicial.gov.tw/FJUD/
-- **司法院開放資料** — https://opendata.judicial.gov.tw/
-- **維基百科** — 搜尋公眾人物親屬資訊
-- **Google 搜尋** — 補充新聞報導與公開資料
-
-### AI 分析
-
-- 使用 OpenAI GPT-4o-mini（可在 `.env` 中切換模型）
-- 結構化 JSON 回應，包含風險分數、關鍵發現、建議等
-- 客觀分析，區分刑事/民事，考慮判決結果
-
-## ⚠️ 免責聲明
-
-- 本工具僅基於**公開法院資料**自動生成報告，**不構成任何法律意見**
-- 資料可能不完整或有誤，請以官方資料為準
-- 「被告」不等於「有罪」，須注意判決結果
-- 本工具僅供參考用途，請勿作為任何決策的唯一依據
-- 使用者應自行承擔使用本工具的風險與責任
-
-## 📄 授權
-
-本專案僅供學術研究與公共利益使用。
+*No technical support provided.*
