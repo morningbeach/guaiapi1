@@ -176,6 +176,32 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("caseBadge").textContent = caseCount;
         document.getElementById("relativeBadge").textContent = relCount;
 
+        // 統計並顯示涉案法院
+        const courts = {};
+        courtCases.forEach(c => {
+            const courtName = c.court || "未知法院";
+            courts[courtName] = (courts[courtName] || 0) + 1;
+        });
+
+        const courtsSection = document.getElementById("involvedCourtsSection");
+        const courtsTags = document.getElementById("involvedCourtsTags");
+
+        if (Object.keys(courts).length > 0) {
+            courtsSection.classList.remove("d-none");
+
+            // 依案件數量降序排序
+            const sortedCourts = Object.entries(courts).sort((a, b) => b[1] - a[1]);
+
+            courtsTags.innerHTML = sortedCourts.map(([court, count]) => `
+                <span class="badge bg-secondary opacity-75 fw-normal rounded-pill px-2 py-1" style="font-size: 0.8rem;">
+                    ${escHtml(court)} <span class="badge bg-white text-dark ms-1 rounded-circle" style="padding: 0.15rem 0.35rem;">${count}</span>
+                </span>
+            `).join("");
+        } else {
+            courtsSection.classList.add("d-none");
+            courtsTags.innerHTML = "";
+        }
+
         // 風險等級對應
         const riskMap = {
             "極高": { cls: "extreme", cardCls: "risk-extreme", color: "#f85149" },
